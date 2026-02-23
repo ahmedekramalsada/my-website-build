@@ -1,0 +1,176 @@
+services:
+  # Reverse Proxy & Load Balancer
+  traefik:
+    image: traefik:v3.0
+    container_name: uwbp-traefik
+    command:
+      - "--api.dashboard=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
+      - "--certificatesresolvers.letsencrypt.acme.email=admin@example.com"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+      - "--ping=true"
+      - "--ping.entrypoint=web"
+      - "--log.level=INFO"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik-certs:/letsencrypt
+    networks:
+      - uwbp-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik.rule=Host(`traefik.localhost`)"
+      - "traefik.http.routers.traefik.service=api@internal"
+      - "traefik.http.routers.traefik.tls=false"
+      - "traefik.http.services.traefik.loadbalancer.server.port=8080"
+      - "traefik.http.middlewares.traefik-auth.basicauth.users=admin:$$apr1$$H6uskkkW$$IgXLP6ewTrSuBkTrqE8wj/"
+    healthcheck:
+      test: [ "CMD", "wget", "-q", "--spider", "http://localhost:80/ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # PostgreSQL - Main Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: uwbp-postgres
+    environment:
+      POSTGRES_DB: uwbp
+      POSTGRES_USER: uwbp
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-uwbp_secure_password_123}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ../../shared-services/postgres/init:/docker-entrypoint-initdb.d
+    networks:
+      - uwbp-network
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U uwbp" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis - Cache & Session Store
+  redis:
+    image: redis:7-alpine
+    container_name: uwbp-redis
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redis_secure_123}
+    volumes:
+      - redis-data:/data
+    networks:
+      - uwbp-network
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # MinIO - Object Storage
+  minio:
+    image: minio/minio:latest
+    container_name: uwbp-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minio_secure_password_123}
+    volumes:
+      - minio-data:/data
+    networks:
+      - uwbp-network
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.minio.rule=Host(`minio.localhost`)"
+      - "traefik.http.routers.minio.service=minio"
+      - "traefik.http.services.minio.loadbalancer.server.port=9001"
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  # Control Plane API
+  api:
+    build:
+      context: ../../control-plane/api
+      dockerfile: Dockerfile
+    container_name: uwbp-api
+    user: "0:0"
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: 8080
+      DATABASE_URL: postgresql://uwbp:${POSTGRES_PASSWORD:-uwbp_secure_password_123}@postgres:5432/uwbp
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secure_123}@redis:6379
+      JWT_SECRET: ${JWT_SECRET:-your_super_secret_jwt_key_change_in_production}
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minio_secure_password_123}
+      MINIO_BUCKET: uwbp-websites
+      DOMAIN_SUFFIX: ${DOMAIN_SUFFIX:-localhost}
+      DOCKER_NETWORK: uwbp-network
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - uwbp-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.api.rule=Host(`api.localhost`)"
+      - "traefik.http.routers.api.service=api"
+      - "traefik.http.services.api.loadbalancer.server.port=8080"
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8080/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Dashboard - React Frontend
+  dashboard:
+    build:
+      context: ../../control-plane/dashboard
+      dockerfile: Dockerfile
+    container_name: uwbp-dashboard
+    environment:
+      REACT_APP_API_URL: http://api.localhost
+    networks:
+      - uwbp-network
+    depends_on:
+      - api
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.dashboard.rule=Host(`dashboard.localhost`)"
+      - "traefik.http.routers.dashboard.service=dashboard"
+      - "traefik.http.services.dashboard.loadbalancer.server.port=80"
+
+networks:
+  uwbp-network:
+    driver: bridge
+    name: uwbp-network
+
+volumes:
+  postgres-data:
+    driver: local
+  redis-data:
+    driver: local
+  minio-data:
+    driver: local
+  traefik-certs:
+    driver: local

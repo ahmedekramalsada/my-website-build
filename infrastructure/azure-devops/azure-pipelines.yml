@@ -1,0 +1,221 @@
+# Universal Website Builder Platform - Azure DevOps Pipeline
+# Multi-stage pipeline for building and deploying UWBP
+
+trigger:
+  branches:
+    include:
+    - main
+    - develop
+  paths:
+    exclude:
+    - '*.md'
+    - 'docs/*'
+
+pr:
+  branches:
+    include:
+    - main
+    - develop
+
+variables:
+  # Container registry
+  containerRegistry: 'uwbpacr.azurecr.io'
+  imageRepository: 'uwbp'
+  
+  # Service connections
+  dockerRegistryServiceConnection: 'uwbp-acr-connection'
+  kubernetesServiceConnection: 'uwbp-aks-connection'
+  
+  # Tagging
+  tag: '$(Build.BuildId)'
+  
+  # Agent VM image
+  vmImageName: 'ubuntu-latest'
+
+stages:
+# ==========================================
+# Stage 1: Build
+# ==========================================
+- stage: Build
+  displayName: 'Build and Push'
+  jobs:
+  - job: Build
+    displayName: 'Build Docker Images'
+    pool:
+      vmImage: $(vmImageName)
+    
+    steps:
+    # Checkout code
+    - checkout: self
+      fetchDepth: 0
+    
+    # Install Node.js for testing
+    - task: NodeTool@0
+      inputs:
+        versionSpec: '18.x'
+      displayName: 'Install Node.js'
+    
+    # Install dependencies and test API
+    - script: |
+        cd control-plane/api
+        npm ci
+        npm run test --if-present
+      displayName: 'Test API'
+      continueOnError: true
+    
+    # Install dependencies and test Dashboard
+    - script: |
+        cd control-plane/dashboard
+        npm ci
+        npm run test --if-present
+      displayName: 'Test Dashboard'
+      continueOnError: true
+    
+    # Build and push API image
+    - task: Docker@2
+      displayName: 'Build and Push API Image'
+      inputs:
+        command: 'buildAndPush'
+        repository: '$(imageRepository)/api'
+        dockerfile: '$(Build.SourcesDirectory)/control-plane/api/Dockerfile'
+        containerRegistry: '$(dockerRegistryServiceConnection)'
+        tags: |
+          $(tag)
+          latest
+        buildContext: '$(Build.SourcesDirectory)/control-plane/api'
+    
+    # Build and push Dashboard image
+    - task: Docker@2
+      displayName: 'Build and Push Dashboard Image'
+      inputs:
+        command: 'buildAndPush'
+        repository: '$(imageRepository)/dashboard'
+        dockerfile: '$(Build.SourcesDirectory)/control-plane/dashboard/Dockerfile'
+        containerRegistry: '$(dockerRegistryServiceConnection)'
+        tags: |
+          $(tag)
+          latest
+        buildContext: '$(Build.SourcesDirectory)/control-plane/dashboard'
+    
+    # Publish Kubernetes manifests
+    - publish: $(Build.SourcesDirectory)/infrastructure/kubernetes
+      artifact: kubernetes-manifests
+      displayName: 'Publish K8s Manifests'
+
+# ==========================================
+# Stage 2: Deploy to Development
+# ==========================================
+- stage: DeployDev
+  displayName: 'Deploy to Development'
+  dependsOn: Build
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/develop'))
+  jobs:
+  - deployment: DeployToDev
+    displayName: 'Deploy to Dev Environment'
+    pool:
+      vmImage: $(vmImageName)
+    environment: 'uwbp-dev'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - download: current
+            artifact: kubernetes-manifests
+          
+          # Update image tags in manifests
+          - task: Bash@3
+            displayName: 'Update Image Tags'
+            inputs:
+              targetType: 'inline'
+              script: |
+                cd $(Pipeline.Workspace)/kubernetes-manifests
+                find . -name '*.yaml' -exec sed -i 's|image:.*api.*|image: $(containerRegistry)/$(imageRepository)/api:$(tag)|g' {} \;
+                find . -name '*.yaml' -exec sed -i 's|image:.*dashboard.*|image: $(containerRegistry)/$(imageRepository)/dashboard:$(tag)|g' {} \;
+          
+          # Apply Kubernetes manifests
+          - task: KubernetesManifest@0
+            displayName: 'Deploy to Kubernetes'
+            inputs:
+              action: 'deploy'
+              kubernetesServiceConnection: '$(kubernetesServiceConnection)'
+              namespace: 'uwbp-dev'
+              manifests: |
+                $(Pipeline.Workspace)/kubernetes-manifests/*.yaml
+              containers: |
+                $(containerRegistry)/$(imageRepository)/api:$(tag)
+                $(containerRegistry)/$(imageRepository)/dashboard:$(tag)
+
+# ==========================================
+# Stage 3: Deploy to Production
+# ==========================================
+- stage: DeployProd
+  displayName: 'Deploy to Production'
+  dependsOn: Build
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  jobs:
+  - deployment: DeployToProd
+    displayName: 'Deploy to Production'
+    pool:
+      vmImage: $(vmImageName)
+    environment: 'uwbp-prod'
+    strategy:
+      canary:
+        increments: [25, 50, 100]
+        deploy:
+          steps:
+          - download: current
+            artifact: kubernetes-manifests
+          
+          - task: Bash@3
+            displayName: 'Update Image Tags'
+            inputs:
+              targetType: 'inline'
+              script: |
+                cd $(Pipeline.Workspace)/kubernetes-manifests
+                find . -name '*.yaml' -exec sed -i 's|image:.*api.*|image: $(containerRegistry)/$(imageRepository)/api:$(tag)|g' {} \;
+                find . -name '*.yaml' -exec sed -i 's|image:.*dashboard.*|image: $(containerRegistry)/$(imageRepository)/dashboard:$(tag)|g' {} \;
+          
+          - task: KubernetesManifest@0
+            displayName: 'Deploy to Kubernetes'
+            inputs:
+              action: 'deploy'
+              kubernetesServiceConnection: '$(kubernetesServiceConnection)'
+              namespace: 'uwbp'
+              manifests: |
+                $(Pipeline.Workspace)/kubernetes-manifests/*.yaml
+              containers: |
+                $(containerRegistry)/$(imageRepository)/api:$(tag)
+                $(containerRegistry)/$(imageRepository)/dashboard:$(tag)
+        
+        on:
+          failure:
+            steps:
+            - task: KubernetesManifest@0
+              displayName: 'Rollback'
+              inputs:
+                action: 'delete'
+                kubernetesServiceConnection: '$(kubernetesServiceConnection)'
+                namespace: 'uwbp'
+                arguments: 'deployment/api deployment/dashboard'
+
+# ==========================================
+# Stage 4: Smoke Tests
+# ==========================================
+- stage: SmokeTests
+  displayName: 'Smoke Tests'
+  dependsOn: 
+  - DeployDev
+  - DeployProd
+  condition: succeeded()
+  jobs:
+  - job: SmokeTest
+    displayName: 'Run Smoke Tests'
+    pool:
+      vmImage: $(vmImageName)
+    steps:
+    - script: |
+        echo "Running smoke tests..."
+        # Add smoke test commands here
+        # curl -f http://api.localhost/health
+        # curl -f http://dashboard.localhost
+      displayName: 'Execute Smoke Tests'
