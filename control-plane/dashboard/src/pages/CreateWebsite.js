@@ -11,9 +11,7 @@ import {
   AlertCircle,
   Upload
 } from 'lucide-react';
-import axios from 'axios';
-
-const API_URL = process.env.REACT_APP_API_URL || 'http://api.localhost';
+import api from '../utils/api';
 
 const templates = [
   {
@@ -90,7 +88,7 @@ export default function CreateWebsite() {
 
   const createMutation = useMutation({
     mutationFn: async (data) => {
-      const response = await axios.post(`${API_URL}/api/websites`, data);
+      const response = await api.post('/websites', data);
       return response.data;
     },
     onSuccess: () => {

@@ -45,7 +45,7 @@ async function seed() {
 
         // Create admin user
         const adminEmail = process.env.ADMIN_EMAIL || 'admin@uwbp.local';
-        const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
+        const adminPassword = process.env.ADMIN_PASSWORD || 'ChangeMe123!'; // Updated default password
         const passwordHash = await bcrypt.hash(adminPassword, 12);
 
         const adminResult = await client.query(

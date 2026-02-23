@@ -17,9 +17,7 @@ import {
   CheckCircle
 } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
-import axios from 'axios';
-
-const API_URL = process.env.REACT_APP_API_URL || 'http://api.localhost';
+import api from '../utils/api';
 
 export default function Settings() {
   const { user, token } = useAuthStore();
@@ -52,9 +50,7 @@ export default function Settings() {
   const { data: quota } = useQuery({
     queryKey: ['quota'],
     queryFn: async () => {
-      const response = await axios.get(`${API_URL}/api/users/quota`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const response = await api.get('/users/quota');
       return response.data;
     },
   });
@@ -62,9 +58,7 @@ export default function Settings() {
   const { data: apiKeys, refetch: refetchApiKeys } = useQuery({
     queryKey: ['apiKeys'],
     queryFn: async () => {
-      const response = await axios.get(`${API_URL}/api/api-keys`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const response = await api.get('/api-keys');
       return response.data.keys || [];
     },
     enabled: activeTab === 'apikeys'
@@ -73,9 +67,7 @@ export default function Settings() {
   // Update profile mutation
   const updateProfileMutation = useMutation({
     mutationFn: async (data) => {
-      const response = await axios.put(`${API_URL}/api/users/profile`, data, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const response = await api.put('/users/profile', data);
       return response.data;
     },
     onSuccess: () => {
@@ -90,9 +82,7 @@ export default function Settings() {
   // Change password mutation
   const changePasswordMutation = useMutation({
     mutationFn: async (data) => {
-      const response = await axios.put(`${API_URL}/api/users/password`, data, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const response = await api.put('/users/password', data);
       return response.data;
     },
     onSuccess: () => {
@@ -107,9 +97,7 @@ export default function Settings() {
   // Create API key mutation
   const createApiKeyMutation = useMutation({
     mutationFn: async (data) => {
-      const response = await axios.post(`${API_URL}/api/api-keys`, data, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const response = await api.post('/api-keys', data);
       return response.data;
     },
     onSuccess: (data) => {
@@ -125,9 +113,7 @@ export default function Settings() {
   // Delete API key mutation
   const deleteApiKeyMutation = useMutation({
     mutationFn: async (keyId) => {
-      await axios.delete(`${API_URL}/api/api-keys/${keyId}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await api.delete(`/api-keys/${keyId}`);
     },
     onSuccess: () => {
       refetchApiKeys();
@@ -207,8 +193,8 @@ export default function Settings() {
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
                 className={`flex items-center gap-2 py-4 border-b-2 font-medium text-sm ${activeTab === tab.id
-                    ? 'border-primary-600 text-primary-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                  ? 'border-primary-600 text-primary-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
                   }`}
               >
                 <Icon className="w-4 h-4" />

@@ -26,9 +26,7 @@ import {
   Upload
 } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
-import axios from 'axios';
-
-const API_URL = process.env.REACT_APP_API_URL || 'http://api.localhost';
+import api from '../utils/api';
 
 export default function WebsiteDetail() {
   const { id } = useParams();
@@ -52,9 +50,7 @@ export default function WebsiteDetail() {
   const { data: website, isLoading } = useQuery({
     queryKey: ['website', id],
     queryFn: async () => {
-      const response = await axios.get(`${API_URL}/api/websites/${id}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const response = await api.get(`/websites/${id}`);
       return response.data.website;
     },
   });
@@ -62,9 +58,7 @@ export default function WebsiteDetail() {
   const { data: logs, refetch: refetchLogs } = useQuery({
     queryKey: ['website-logs', id],
     queryFn: async () => {
-      const response = await axios.get(`${API_URL}/api/websites/${id}/logs`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const response = await api.get(`/websites/${id}/logs`);
       return response.data.logs;
     },
     enabled: activeTab === 'logs',
@@ -92,9 +86,7 @@ export default function WebsiteDetail() {
 
   const fetchFiles = async () => {
     try {
-      const response = await axios.get(`${API_URL}/api/uploads/${id}/files`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const response = await api.get(`/uploads/${id}/files`);
       setFiles(response.data.files || []);
     } catch (error) {
       console.error('Failed to fetch files:', error);
@@ -103,30 +95,22 @@ export default function WebsiteDetail() {
   };
 
   const deployMutation = useMutation({
-    mutationFn: () => axios.post(`${API_URL}/api/websites/${id}/deploy`, {}, {
-      headers: { Authorization: `Bearer ${token}` }
-    }),
+    mutationFn: () => api.post(`/websites/${id}/deploy`),
     onSuccess: () => queryClient.invalidateQueries(['website', id]),
   });
 
   const stopMutation = useMutation({
-    mutationFn: () => axios.post(`${API_URL}/api/websites/${id}/stop`, {}, {
-      headers: { Authorization: `Bearer ${token}` }
-    }),
+    mutationFn: () => api.post(`/websites/${id}/stop`),
     onSuccess: () => queryClient.invalidateQueries(['website', id]),
   });
 
   const startMutation = useMutation({
-    mutationFn: () => axios.post(`${API_URL}/api/websites/${id}/start`, {}, {
-      headers: { Authorization: `Bearer ${token}` }
-    }),
+    mutationFn: () => api.post(`/websites/${id}/start`),
     onSuccess: () => queryClient.invalidateQueries(['website', id]),
   });
 
   const deleteMutation = useMutation({
-    mutationFn: () => axios.delete(`${API_URL}/api/websites/${id}`, {
-      headers: { Authorization: `Bearer ${token}` }
-    }),
+    mutationFn: () => api.delete(`/websites/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries(['websites']);
       window.location.href = '/websites';
@@ -134,20 +118,14 @@ export default function WebsiteDetail() {
   });
 
   const updateSettingsMutation = useMutation({
-    mutationFn: (data) => axios.put(`${API_URL}/api/websites/${id}`, data, {
-      headers: { Authorization: `Bearer ${token}` }
-    }),
+    mutationFn: (data) => api.put(`/websites/${id}`, data),
     onSuccess: () => {
       queryClient.invalidateQueries(['website', id]);
     },
   });
 
   const saveFileMutation = useMutation({
-    mutationFn: (content) => axios.put(`${API_URL}/api/uploads/${id}/files/${selectedFile}`,
-      { content },
-      {
-        headers: { Authorization: `Bearer ${token}` }
-      }),
+    mutationFn: (content) => api.put(`/uploads/${id}/files/${selectedFile}`, { content }),
     onSuccess: () => {
       queryClient.invalidateQueries(['website', id]);
       fetchFiles();
@@ -155,9 +133,7 @@ export default function WebsiteDetail() {
   });
 
   const deleteFileMutation = useMutation({
-    mutationFn: (filename) => axios.delete(`${API_URL}/api/uploads/${id}/files/${filename}`, {
-      headers: { Authorization: `Bearer ${token}` }
-    }),
+    mutationFn: (filename) => api.delete(`/uploads/${id}/files/${filename}`),
     onSuccess: (_, filename) => {
       fetchFiles();
       if (selectedFile === filename) {
@@ -199,9 +175,7 @@ export default function WebsiteDetail() {
 
   const handleFileSelect = async (filename) => {
     try {
-      const response = await axios.get(`${API_URL}/api/uploads/${id}/files/${filename}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const response = await api.get(`/uploads/${id}/files/${filename}`);
       setSelectedFile(filename);
       setFileContent(response.data.content || '');
     } catch (error) {

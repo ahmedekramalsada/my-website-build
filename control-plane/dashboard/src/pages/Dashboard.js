@@ -1,25 +1,23 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { 
-  Globe, 
-  Activity, 
-  Server, 
+import {
+  Globe,
+  Activity,
+  Server,
   Users,
   ArrowRight,
   CheckCircle,
   XCircle,
   Clock
 } from 'lucide-react';
-import axios from 'axios';
-
-const API_URL = process.env.REACT_APP_API_URL || 'http://api.localhost';
+import api from '../utils/api';
 
 export default function Dashboard() {
   const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ['system-stats'],
     queryFn: async () => {
-      const response = await axios.get(`${API_URL}/api/system/stats`);
+      const response = await api.get('/system/stats');
       return response.data.stats;
     },
   });
@@ -27,7 +25,7 @@ export default function Dashboard() {
   const { data: websites, isLoading: websitesLoading } = useQuery({
     queryKey: ['websites'],
     queryFn: async () => {
-      const response = await axios.get(`${API_URL}/api/websites`);
+      const response = await api.get('/websites');
       return response.data.websites;
     },
   });
@@ -133,12 +131,11 @@ export default function Dashboard() {
                 className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
               >
                 <div className="flex items-center gap-4">
-                  <div className={`w-3 h-3 rounded-full ${
-                    website.status === 'running' ? 'bg-green-500' :
-                    website.status === 'stopped' ? 'bg-yellow-500' :
-                    website.status === 'error' ? 'bg-red-500' :
-                    'bg-gray-400'
-                  }`} />
+                  <div className={`w-3 h-3 rounded-full ${website.status === 'running' ? 'bg-green-500' :
+                      website.status === 'stopped' ? 'bg-yellow-500' :
+                        website.status === 'error' ? 'bg-red-500' :
+                          'bg-gray-400'
+                    }`} />
                   <div>
                     <p className="font-medium text-gray-900">{website.name}</p>
                     <p className="text-sm text-gray-500">{website.subdomain}.localhost</p>

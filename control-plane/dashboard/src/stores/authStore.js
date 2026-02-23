@@ -1,8 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import axios from 'axios';
-
-const API_URL = process.env.REACT_APP_API_URL || 'http://api.localhost';
+import api from '../utils/api';
 
 export const useAuthStore = create(
   persist(
@@ -16,23 +14,23 @@ export const useAuthStore = create(
       login: async (email, password) => {
         set({ isLoading: true, error: null });
         try {
-          const response = await axios.post(`${API_URL}/api/auth/login`, {
+          const response = await api.post('/auth/login', {
             email,
             password,
           });
-          
+
           const { user, token } = response.data;
-          
-          // Set default auth header
-          axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-          
+
           set({
             user,
             token,
             isAuthenticated: true,
             isLoading: false,
           });
-          
+
+          // Force re-render/re-auth on api utility
+          window.location.href = '/';
+
           return true;
         } catch (error) {
           set({
@@ -46,23 +44,23 @@ export const useAuthStore = create(
       register: async (email, password, fullName) => {
         set({ isLoading: true, error: null });
         try {
-          const response = await axios.post(`${API_URL}/api/auth/register`, {
+          const response = await api.post('/auth/register', {
             email,
             password,
             fullName,
           });
-          
+
           const { user, token } = response.data;
-          
-          axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-          
+
           set({
             user,
             token,
             isAuthenticated: true,
             isLoading: false,
           });
-          
+
+          window.location.href = '/';
+
           return true;
         } catch (error) {
           set({
@@ -74,7 +72,6 @@ export const useAuthStore = create(
       },
 
       logout: () => {
-        delete axios.defaults.headers.common['Authorization'];
         set({
           user: null,
           token: null,
@@ -92,8 +89,3 @@ export const useAuthStore = create(
   )
 );
 
-// Initialize auth header if token exists
-const storedToken = useAuthStore.getState().token;
-if (storedToken) {
-  axios.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
-}

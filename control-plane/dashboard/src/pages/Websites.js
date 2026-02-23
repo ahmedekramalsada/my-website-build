@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { 
-  Globe, 
-  Search, 
+import {
+  Globe,
+  Search,
   Filter,
   Play,
   Square,
@@ -15,9 +15,7 @@ import {
   Clock,
   AlertCircle
 } from 'lucide-react';
-import axios from 'axios';
-
-const API_URL = process.env.REACT_APP_API_URL || 'http://api.localhost';
+import api from '../utils/api';
 
 export default function Websites() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -27,29 +25,29 @@ export default function Websites() {
   const { data: websites, isLoading } = useQuery({
     queryKey: ['websites'],
     queryFn: async () => {
-      const response = await axios.get(`${API_URL}/api/websites`);
+      const response = await api.get('/websites');
       return response.data.websites;
     },
   });
 
   const stopMutation = useMutation({
-    mutationFn: (id) => axios.post(`${API_URL}/api/websites/${id}/stop`),
+    mutationFn: (id) => api.post(`/websites/${id}/stop`),
     onSuccess: () => queryClient.invalidateQueries(['websites']),
   });
 
   const startMutation = useMutation({
-    mutationFn: (id) => axios.post(`${API_URL}/api/websites/${id}/start`),
+    mutationFn: (id) => api.post(`/websites/${id}/start`),
     onSuccess: () => queryClient.invalidateQueries(['websites']),
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id) => axios.delete(`${API_URL}/api/websites/${id}`),
+    mutationFn: (id) => api.delete(`/websites/${id}`),
     onSuccess: () => queryClient.invalidateQueries(['websites']),
   });
 
   const filteredWebsites = websites?.filter(website => {
     const matchesSearch = website.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         website.subdomain.toLowerCase().includes(searchTerm.toLowerCase());
+      website.subdomain.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = statusFilter === 'all' || website.status === statusFilter;
     return matchesSearch && matchesStatus;
   }) || [];
@@ -111,7 +109,7 @@ export default function Websites() {
           <Globe className="w-16 h-16 text-gray-300 mx-auto mb-4" />
           <h3 className="text-lg font-medium text-gray-900 mb-2">No websites found</h3>
           <p className="text-gray-500 mb-6">
-            {searchTerm || statusFilter !== 'all' 
+            {searchTerm || statusFilter !== 'all'
               ? 'Try adjusting your filters'
               : 'Get started by creating your first website'}
           </p>
@@ -147,12 +145,11 @@ export default function Websites() {
                 </div>
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-gray-500">Status</span>
-                  <span className={`capitalize font-medium ${
-                    website.status === 'running' ? 'text-green-600' :
-                    website.status === 'stopped' ? 'text-yellow-600' :
-                    website.status === 'error' ? 'text-red-600' :
-                    'text-gray-600'
-                  }`}>
+                  <span className={`capitalize font-medium ${website.status === 'running' ? 'text-green-600' :
+                      website.status === 'stopped' ? 'text-yellow-600' :
+                        website.status === 'error' ? 'text-red-600' :
+                          'text-gray-600'
+                    }`}>
                     {website.status}
                   </span>
                 </div>
